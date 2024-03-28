@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -79,6 +80,8 @@ impl GameNode {
             return;
         }
 
+        let mut dying_dice_roles = HashSet::from(POSSIBLE_DICE_VALUES);
+
         let alive_pieces = self.create_vector_representation();
 
         // Calculates the number of possible combinations that exist for the given game state.
@@ -105,6 +108,9 @@ impl GameNode {
                 // If the pieces don't add up to the dice role then the move is invalid.
                 if summed_pieces != dice_role { continue; }
 
+                // The dice role leads to another board state.
+                dying_dice_roles.remove(&dice_role);
+
                 // -- Creation of child state --
                 let child_board = self.board & !combination;
 
@@ -114,6 +120,11 @@ impl GameNode {
             }
         }
 
+        // For any die roles that didn't lead to any children boards create dead boards
+        for dying_role in dying_dice_roles {
+            let dead_node = Self::new_dead_node(&dying_role, &self.board);
+            self.children.push(dead_node);
+        }
     }
 
 
@@ -168,6 +179,11 @@ impl GameNode {
             parents: vec![GameState::from_board_and_dice(parent_board, dice_role)],
             children: vec![],
         }
+    }
+
+    /// Creates a new dead child node from the parent [GameState]
+    fn new_dead_node(dice_role: &u8, parent_board: &u16) -> GameNode {
+        Self::new_child_node(0, dice_role, parent_board)
     }
 }
 
