@@ -11,7 +11,7 @@ const POSSIBLE_DICE_VALUES: [u8; 11] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 /// This struct represents the current state of the board as well as any state that lead to it or follow it.
 #[derive(Clone)]
 pub struct GameNode {
-    state: GameState,
+    board: u16,
 
     parents: Vec<GameState>,
     children: Vec<GameNode>,
@@ -24,16 +24,16 @@ impl GameNode {
     /// A root node is a node with all the numbers high, no parents, & all the children populated.
     pub fn new_root_node() -> GameNode {
         let mut root_node = GameNode {
-            state: GameState::new_root_state(),
+            board: 0b0000000111111111,
             parents: vec![],
             children: vec![],
         };
         root_node
     }
 
-    /// Returns a reference to the current game state of the board.
-    pub fn get_state(&self) -> &GameState {
-        &self.state
+    /// Returns a reference to the board represented by this node.
+    pub fn get_state(&self) -> &u16 {
+        &self.board
     }
 
     /// Returns a reference to the current children for this state of the board.
@@ -75,7 +75,7 @@ impl GameNode {
 
     /// Calculates the children for this node.
     pub fn calculate_children(&mut self) {
-        if self.state.get_board() == 0 {
+        if self.board == 0 {
             return;
         }
 
@@ -106,10 +106,9 @@ impl GameNode {
                 if summed_pieces != dice_role { continue; }
 
                 // -- Creation of child state --
-                let child_board = self.state.get_board() & !combination;
-                let child_state = GameState::from_board_and_dice(&child_board, &dice_role);
+                let child_board = self.board & !combination;
 
-                let child_node = Self::new_child_node(&child_state, self.state);
+                let child_node = Self::new_child_node(child_board, &dice_role, &self.board);
 
                 self.children.push(child_node);
             }
@@ -161,10 +160,10 @@ impl GameNode {
     }
 
     /// Creates a new node that is the child of the parent [GameState].
-    fn new_child_node(state: &GameState, parent: GameState) -> GameNode {
+    fn new_child_node(board: u16, dice_role: &u8, parent_board: &u16) -> GameNode {
         GameNode {
-            state: state.clone(),
-            parents: vec![parent],
+            board,
+            parents: vec![GameState::from_board_and_dice(parent_board, dice_role)],
             children: vec![],
         }
     }
@@ -174,9 +173,12 @@ impl GameNode {
 
     /// Returns a string representation of this [GameNode]
     fn display(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
-        let mut output = "GameState {\n    state: ".to_string();
+        let mut output = "GameNode {\n    board: ".to_string();
 
-        output.push_str(&self.state.to_string());
+        // "{:#0011b}" Prints a minimum of 11 chars of binary (including the 0b prefix).
+        // The split removes the starting "0b" chars.
+        let binary_board = format!("{:#0011b}", &self.board).split_at(2).1.to_string();
+        output.push_str(&binary_board);
 
         output.push_str(",\n    parents: [");
 
