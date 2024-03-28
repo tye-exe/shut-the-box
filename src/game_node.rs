@@ -28,7 +28,6 @@ impl GameNode {
             parents: vec![],
             children: vec![],
         };
-        root_node.calculate_children();
         root_node
     }
 
