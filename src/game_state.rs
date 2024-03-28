@@ -60,7 +60,7 @@ impl GameState {
     /// Sets the binary representation of the board.
     pub fn set_board(&mut self, new_board: u16) {
         // Input validation on incoming board.
-        let validated_board = new_board & 0b0000000111111111;
+        let validated_board = new_board & BOARD_BITS_HIGH;
 
         self.state = self.state & !BOARD_BITS_HIGH;
         self.state = self.state | validated_board;
