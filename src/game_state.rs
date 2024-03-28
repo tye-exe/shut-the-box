@@ -11,12 +11,13 @@
 
 use std::fmt;
 use std::fmt::{Formatter, Write};
+use std::hash::{Hash, Hasher};
 
 const BOARD_BITS_HIGH: u16 = 0b0000000111111111;
 const DICE_BITS_HIGH: u16 = 0b1111000000000000;
 
 /// Stores a state of the board & the dice role needed from the parent to get to this state.
-#[derive(Eq, PartialEq, Hash, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct GameState {
     state: u16
 }
@@ -109,5 +110,24 @@ impl fmt::Debug for GameState {
 
         f.write_str(format!("    dice: {}\n", self.get_dice()).as_str())?;
         f.write_str("} ")
+    }
+}
+
+impl PartialEq for GameState {
+    fn eq(&self, other: &Self) -> bool {
+        return self.get_board() == other.get_board()
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        return self.get_board() != other.get_board()
+    }
+}
+
+impl Eq for GameState {}
+
+
+impl Hash for GameState {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_board().hash(state);
     }
 }
