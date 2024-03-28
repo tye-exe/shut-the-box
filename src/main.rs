@@ -1,14 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::game_node::GameNode;
-use crate::game_state::GameState;
 
 mod game_node;
 mod game_state;
 
 fn main() {
 
-    let mut explored_states: HashMap<GameState, GameNode> = HashMap::new();
+    let mut explored_states: HashMap<u16, GameNode> = HashMap::new();
     let mut unexplored_nodes: VecDeque<GameNode> = VecDeque::new();
 
     // Adds the beginning state of the game with all the numbers alvie to the unexplored node queue.
