@@ -119,6 +119,28 @@ impl GameNode {
     }
 
 
+    /// Returns a vector representation of the alive pieces.
+    /// The returned vector will be sorted from smallest to largest.
+    fn create_vector_representation(&self) -> Vec<u8> {
+        let mut alive_pieces: Vec<u8> = Vec::new();
+
+        // Loops over every piece on the board
+        for piece in 0..10 {
+
+            // Shifts the current piece being checked into the least significant position
+            let shifted = self.board >> piece;
+
+            // If the piece is dead then continue the loop
+            if shifted & 1 != 1 { continue; }
+
+            // Adds the alive pieces to the vector
+            alive_pieces.push(piece + 1)
+        }
+
+        alive_pieces
+    }
+
+
     /// Converts the binary encoded combination to its numeric value.
     /// For example, 0101 would become the value of the numbers at index 2 + index 0 of the given vector.
     fn combination_to_piece_value(encoded_combination: u16, alive_pieces: &Vec<u8>) -> u8 {
@@ -137,29 +159,6 @@ impl GameNode {
         }
 
         summed_pieces
-    }
-
-
-    /// Returns a vector representation of the alive pieces.
-    /// The returned vector will be sorted from smallest to largest.
-    fn create_vector_representation(&self) -> Vec<u8> {
-        let mut alive_pieces: Vec<u8> = Vec::new();
-
-        // Loops over every piece on the board
-        for piece in (0..10).rev() {
-
-            // Shifts the current piece being checked into the least significant position
-            let shifted = self.state.get_board() >> piece;
-
-            // If the piece is dead then continue the loop
-            if shifted & 1 != 1 { continue; }
-
-            // Adds the alive pieces to the vector
-            // The piece value is offset by + 1 as there is no 0 piece
-            alive_pieces.push(piece + 1)
-        }
-
-        alive_pieces
     }
 
     /// Creates a new node that is the child of the parent [GameState].
