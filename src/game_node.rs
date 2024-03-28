@@ -9,7 +9,7 @@ const POSSIBLE_DICE_VALUES: [u8; 11] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 
 /// This struct represents the current state of the board as well as any state that lead to it or follow it.
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 pub struct GameNode {
     board: u16,
 
