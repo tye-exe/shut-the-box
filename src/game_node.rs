@@ -144,7 +144,9 @@ impl GameNode {
     fn combination_to_piece_value(encoded_combination: u16, alive_pieces: &Vec<u8>) -> u8 {
         let mut summed_pieces: u8 = 0;
 
-        for piece_index in (0..alive_pieces.len()).rev() {
+        let total_alive = alive_pieces.len();
+
+        for piece_index in 0..(total_alive + 1) {
             // Moves the current bit being evaluated into the least signification position.
             let shifted = encoded_combination >> piece_index;
 
