@@ -48,7 +48,7 @@ impl Roll {
     }
 
     fn preform_move(move_to_perform: u16, alive_pieces: &Vec<u8>) -> Vec<u8> {
-        let mut new_alive = Vec::new();
+        let mut new_alive = Vec::with_capacity(9);
 
         for piece_index in 0..alive_pieces.len() {
             let shifted = move_to_perform >> piece_index;
