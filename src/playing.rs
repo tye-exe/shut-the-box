@@ -13,6 +13,21 @@ use crate::{get_board, get_rand_board};
 use crate::board::Board;
 use crate::playing::Result::{DRAW, LOSS, WIN};
 
+#[derive(Eq, PartialEq, Hash, Copy, Clone)]
+struct BoardRoll {
+    board: u16,
+    roll: u8,
+}
+
+impl Serialize for BoardRoll {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer {
+        serializer.collect_str(
+            &format!("{}-{}", self.board, self.roll)
+        )
+    }
+}
+
+
 /// A wrapper struct to store the moves taken in a game & the result of the game.
 pub struct Games {
     pub moves: Vec<Choice>,
@@ -28,7 +43,7 @@ impl Games {
 
 /// Stores the total value of a choice & the amount of times it was taken.
 /// This allows for the division to be performed after, since division is very intensive.
-#[derive(Debug, Copy, Clone, Serialize)]
+#[derive(Debug, Copy, Clone)]
 pub struct Weight {
     total: u32,
     used: u32,
@@ -70,14 +85,6 @@ impl Choice {
     /// Returns true if the move this choice represents would lead to a game over.
     pub fn is_dying_choice(&self) -> bool {
         self.chosen_board == None
-    }
-}
-
-impl Serialize for Choice {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer {
-        serializer.collect_str(
-            &format!("{}-{}-{:?}", self.root_board, self.roll, self.chosen_board)
-        )
     }
 }
 
@@ -142,11 +149,6 @@ pub fn compute_weights() {
                 continue;
             }
 
-            // if the choice would lead to a death, don't combine it.
-            if choice.is_dying_choice() {
-                continue;
-            }
-
             // Combine the existing weight with the thread weight.
             let existing_weight = win_weights.get_mut(choice).expect("Will exist.");
             let thread_weight = thread_map.get(choice).expect("Will exist.");
@@ -156,20 +158,45 @@ pub fn compute_weights() {
         println!("{}", finished_threads + 1);
     }
 
-    // Calculates the average win chance of picking a given choice.
-    let mut computed_map = HashMap::new();
+
+    // Contains the best choice for each roll for each board.
+    let mut choice_map = HashMap::new();
+    // Contains the win % of the current best choice
+    let mut weight_map = HashMap::new();
+
+    // Calculates the best choice for each roll for each board.
     for choice in win_weights.keys() {
         let weight = win_weights.get(choice).expect("Iterating over every key so the kye must be in the map.");
         let win_average = weight.calculate();
 
-        computed_map.insert(*choice, win_average);
+        let board_roll = BoardRoll {
+            board: choice.root_board,
+            roll: choice.roll
+        };
+
+        // If the map contains a choice that wins more often discard this choice.
+        if let Some(existing) = weight_map.get(&board_roll) {
+            if *existing > win_average { continue; }
+        }
+
+        weight_map.insert(
+            board_roll,
+            win_average
+        );
+
+        choice_map.insert(
+            board_roll,
+            choice.chosen_board.expect("None boards are removed before this function.")
+        );
     }
 
+
+
     // Writes the data to the file to be referenced later.
-    let file = File::create("computed_weights.yml").expect("Should be able to create file.");
+    let file = File::create("best_move.yml").expect("Should be able to create file.");
     let writer = BufWriter::new(file);
 
-    serde_yaml::to_writer(writer, &computed_map).expect("Should be able to write data to file.");
+    serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
 }
 
 
