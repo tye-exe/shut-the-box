@@ -35,7 +35,6 @@ pub struct Weight {
 }
 
 impl Weight {
-
     /// Adds the given amount to the weight.
     pub fn inc(&mut self, amount: u32) {
         self.total += amount;
@@ -84,13 +83,15 @@ impl Serialize for Choice {
 
 
 /// Represents the weight of each simulation outcome.
-/// Win = 10
-/// Draw = 5
+/// Win = 1000
+/// Draw = 500
 /// Loss = 0
+///
+/// The values are big as it results in higher accuracy during the division for the average win calculation.
 #[derive(Copy, Clone)]
 pub enum Result {
-    WIN = 10,
-    DRAW = 5,
+    WIN = 1000,
+    DRAW = 500,
     LOSS = 0,
 }
 
@@ -99,7 +100,7 @@ pub enum Result {
 const THREADS: u8 = 8;
 
 /// The amount of games each thread should simulate.
-const GAMES_TO_PLAY: u32 = 500000;
+const GAMES_TO_PLAY: u32 = 100000;
 
 /// Simulates games of shut the box & write the win rates of each move to "computed_weights.yml"
 pub fn compute_weights() {
@@ -155,10 +156,20 @@ pub fn compute_weights() {
         println!("{}", finished_threads + 1);
     }
 
+    // Calculates the average win chance of picking a given choice.
+    let mut computed_map = HashMap::new();
+    for choice in win_weights.keys() {
+        let weight = win_weights.get(choice).expect("Iterating over every key so the kye must be in the map.");
+        let win_average = weight.calculate();
+
+        computed_map.insert(*choice, win_average);
+    }
+
+    // Writes the data to the file to be referenced later.
     let file = File::create("computed_weights.yml").expect("Should be able to create file.");
     let writer = BufWriter::new(file);
 
-    serde_yaml::to_writer(writer, &win_weights).expect("Should be able to write data to file.");
+    serde_yaml::to_writer(writer, &computed_map).expect("Should be able to write data to file.");
 }
 
 
