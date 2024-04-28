@@ -13,6 +13,8 @@ use crate::{get_board, get_rand_board};
 use crate::board::Board;
 use crate::playing::Result::{DRAW, LOSS, WIN};
 
+/// Contains a possible board & a possible roll.
+/// This will be used as a key to look the next move.
 #[derive(Eq, PartialEq, Hash, Copy, Clone)]
 struct BoardRoll {
     board: u16,
@@ -50,7 +52,7 @@ pub struct Weight {
 }
 
 impl Weight {
-    /// Adds the given amount to the weight.
+    /// Adds the given amount to this weight.
     pub fn inc(&mut self, amount: u32) {
         self.total += amount;
         self.used += 1;
@@ -62,7 +64,7 @@ impl Weight {
         self.used += other.used;
     }
 
-    /// Calculates the average chance of
+    /// Calculates the average of if choosing a move would result in a win.
     pub fn calculate(&self) -> u16 {
         self.total.div(self.used) as u16
     }
@@ -103,26 +105,21 @@ pub enum Result {
 }
 
 
-/// The amount of threads to simulate games with.
-const THREADS: u8 = 8;
-
-/// The amount of games each thread should simulate.
-const GAMES_TO_PLAY: u32 = 100000;
-
-/// Simulates games of shut the box & write the win rates of each move to "computed_weights.yml"
-pub fn compute_weights() {
+/// Randomly simulates the given amount of games to play on the number of given threads.
+/// This method writes the best move for each board-roll combination to "best_moves.yml"
+pub fn compute_weights(threads: u8, games_to_play: u32) {
     let mut win_weights: HashMap<Choice, Weight> = HashMap::new();
     let (tx, rx) = mpsc::channel();
 
     // Creates threads to compute random simulations of the game.
-    for _ in 0..THREADS {
+    for _ in 0..threads {
         let tx_thread = tx.clone();
 
         thread::spawn(move || {
             // Each simulation will start from a random board to get an even distribution
             let mut win_weights: HashMap<Choice, Weight> = HashMap::new();
 
-            for _ in 0..GAMES_TO_PLAY {
+            for _ in 0..games_to_play {
                 let board = get_rand_board();
                 let (game_one, game_two) = run_game(&board);
 
@@ -139,7 +136,7 @@ pub fn compute_weights() {
     }
 
     // Waits for each thread to finish & merges its results into the main map.
-    for finished_threads in 0..THREADS {
+    for finished_threads in 0..threads {
         let thread_map = rx.recv().expect("Should always receive a value");
 
         for choice in thread_map.keys() {
@@ -155,7 +152,7 @@ pub fn compute_weights() {
             existing_weight.combine(thread_weight);
         }
 
-        println!("{}", finished_threads + 1);
+        println!("Games simulated: {}", (finished_threads + 1) as u32 * games_to_play);
     }
 
 
@@ -171,7 +168,7 @@ pub fn compute_weights() {
 
         let board_roll = BoardRoll {
             board: choice.root_board,
-            roll: choice.roll
+            roll: choice.roll,
         };
 
         // If the map contains a choice that wins more often discard this choice.
@@ -181,37 +178,35 @@ pub fn compute_weights() {
 
         weight_map.insert(
             board_roll,
-            win_average
+            win_average,
         );
 
         choice_map.insert(
             board_roll,
-            choice.chosen_board.expect("None boards are removed before this function.")
+            choice.chosen_board.expect("None boards are removed before this function."),
         );
     }
 
 
-
     // Writes the data to the file to be referenced later.
-    let file = File::create("best_move.yml").expect("Should be able to create file.");
+    let file = File::create("best_moves.yml").expect("Should be able to create file.");
     let writer = BufWriter::new(file);
-
     serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
 }
 
 
-/// Simulates two games with the given board state.
+/// Simulates two random games with the given board state.
 pub fn run_game(board: &Board) -> (Games, Games) {
-    // Ensures that each game has the same roll pattern
+    // Ensures that each game has the same roll rng.
     let rand_seed = fastrand::u64(..);
 
-    // Simulates the games
+    // Simulates the games.
     // Each game has a different board rng.
-    let mut rng = Rng::with_seed(fastrand::u64(..));
-    let first_game = rand(board, Vec::new(), &mut Rng::with_seed(rand_seed), &mut rng);
+    let mut rng_1 = Rng::with_seed(fastrand::u64(..));
+    let first_game = rand(board, Vec::new(), &mut Rng::with_seed(rand_seed), &mut rng_1);
 
-    let mut rng1 = Rng::with_seed(fastrand::u64(..));
-    let second_game = rand(board, Vec::new(), &mut Rng::with_seed(rand_seed), &mut rng1);
+    let mut rng_2 = Rng::with_seed(fastrand::u64(..));
+    let second_game = rand(board, Vec::new(), &mut Rng::with_seed(rand_seed), &mut rng_2);
 
     // Uses the wrapper to store the game data
     let mut first = Games::new(first_game.1, DRAW);
@@ -232,16 +227,18 @@ pub fn run_game(board: &Board) -> (Games, Games) {
 
 /// Performs a random move on the given board recursively, until there are no valid moves.
 /// The returned u8 is the finial value of the board
-fn rand(board: &Board, mut choices: Vec<Choice>, rng_roll: &mut Rng, rng_board: &mut Rng) -> (u8, Vec<Choice>) {
-    let rand_move = board.get_rand_roll(rng_roll);
+fn rand(board: &Board, mut choices: Vec<Choice>, roll_rng: &mut Rng, board_rng: &mut Rng) -> (u8, Vec<Choice>) {
+    let rand_roll = board.get_rand_roll(roll_rng);
 
     let mut choice = Choice {
         root_board: board.get_raw(),
-        roll: rand_move.roll_value,
+        roll: rand_roll.roll_value,
         chosen_board: None,
     };
 
-    return match rand_move.get_rand_board(rng_board) {
+    // If there are no more valid moves return the board value & the moves leading to the last valid board.
+    // If there are more valid moves randomly simulate them.
+    return match rand_roll.get_rand_board(board_rng) {
         None => {
             choices.push(choice);
             (board.calculate_value(), choices)
@@ -249,8 +246,9 @@ fn rand(board: &Board, mut choices: Vec<Choice>, rng_roll: &mut Rng, rng_board: 
         Some(rand_board) => {
             choice.set_chosen_board(rand_board);
             choices.push(choice);
+
             let board = get_board(rand_board as usize).expect("Will exist");
-            rand(board, choices, rng_roll, rng_board)
+            rand(board, choices, roll_rng, board_rng)
         }
     };
 }
@@ -259,7 +257,7 @@ fn rand(board: &Board, mut choices: Vec<Choice>, rng_roll: &mut Rng, rng_board: 
 fn update_weights(game: Games, value: u32, win_weights: &mut HashMap<Choice, Weight>) {
     for game_move in game.moves {
         // If the move caused a death, don't even consider it.
-        if game_move.chosen_board == None {
+        if game_move.is_dying_choice() {
             continue;
         }
 

@@ -35,14 +35,15 @@ pub fn get_board(binary_board: usize) -> Option<&'static Board> {
     get_boards().get(binary_board)
 }
 
+/// Gets a random board.
 pub fn get_rand_board() -> &'static Board {
     get_boards().choose(&mut thread_rng()).expect("The vec will never be empty.")
 }
 
 fn main() {
     let before = SystemTime::now();
-    playing::compute_weights();
+    playing::compute_weights(8, 10000000);
 
     let duration = SystemTime::now().duration_since(before).unwrap();
-    println!("{:?}", duration);
+    println!("Time taken to simulate: {:?}", duration);
 }
