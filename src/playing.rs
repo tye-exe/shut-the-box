@@ -173,7 +173,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32) {
 
         // If the map contains a choice that wins more often discard this choice.
         if let Some(existing) = weight_map.get(&board_roll) {
-            if *existing > win_average { continue; }
+            if *existing < win_average { continue; }
         }
 
         weight_map.insert(
