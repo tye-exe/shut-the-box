@@ -42,6 +42,8 @@ struct Main {
     // Vars to do with display the boards
     /// The current board having its moves displayed.
     root_board: u16,
+    /// Stores the previous root board that was displayed
+    previous_bord: u16,
     /// Stores the pre-calculated best moves from a simulation.
     parsed_moves: Option<HashMap<BoardRoll, u16>>,
 }
@@ -55,6 +57,7 @@ impl Default for Main {
             unvalidated_games_to_simulate: String::from("100000"),
             could_parse_games: true,
             root_board: 511,
+            previous_bord: 511,
             parsed_moves: parse_moves(),
         }
     }
@@ -79,7 +82,7 @@ impl Main {
         };
 
         playing::compute_weights(threads, games_to_simulate);
-        todo!("Make this async & include a progress bar")
+        //todo!("Make this async & include a progress bar")
     }
 }
 
@@ -102,8 +105,34 @@ impl eframe::App for Main {
                     if board_info.is_none() { return; }
                     let board_info = board_info.unwrap();
 
+                    let mut clicked_on = None;
+                    for board_index in 0..board_info.len() {
+                        let board = board_info.get(board_index).expect("Will exist");
 
+                        let clicked = ui.interact(board.1, board.0, egui::Sense::click()).clicked();
+                        if !clicked { continue; }
 
+                        clicked_on = Some(board_index as u8)
+                    }
+
+                    // If none of the boards were clicked on, return.
+                    if clicked_on == None { return; }
+                    let clicked_on = clicked_on.unwrap();
+
+                    let best_moves = self.parsed_moves.as_ref().expect("Will exist as board info must exist to get to this point. Board info requires this to be some.");
+
+                    let board_roll = BoardRoll::new(
+                        self.root_board,
+                        clicked_on+1 // Clicked-on is one less than the value it should be.
+                    );
+
+                    // If the value doesn't exist, then it's a dying move.
+                    match best_moves.get(&board_roll) {
+                        Some(best_move) => {self.root_board = *best_move}
+                        None => {
+                            // Will execute on dying move
+                        }
+                    };
                 });
     }
 }
@@ -163,7 +192,7 @@ impl Main {
                 });
     }
 
-    fn central_panel(&mut self, context: &egui::Context, ui: &mut Ui) -> Option<Vec<(Id, Rect)>> {
+    fn central_panel(&self, context: &egui::Context, ui: &mut Ui) -> Option<Vec<(Id, Rect)>> {
         // Checks if best moves have been calculated.
         if let Some(best_moves) = &self.parsed_moves {
 
@@ -185,7 +214,7 @@ impl Main {
             let mut board_layouts = Vec::with_capacity(12);
             for roll in 2..13 {
                 let board_roll = BoardRoll::new(self.root_board, roll);
-                let best_move = *best_moves.get(&board_roll).expect("Will always exist");
+                let best_move = *best_moves.get(&board_roll).unwrap_or(&0u16);
 
                 board_layouts.push(Self::generate_board(self.root_board, roll, best_move));
             }
@@ -278,7 +307,7 @@ impl Main {
             let root_piece = root_pieces[piece_index as usize];
             let move_piece = move_pieces[piece_index as usize];
 
-            let background = match (root_piece, move_piece) {
+            let mut background = match (root_piece, move_piece) {
                 // If both pieces are alive, it wasn't affected in the move.
                 (true, true) => { Color32::DARK_GREEN }
                 // If both piece are down, then they should be grayed out.
@@ -294,6 +323,11 @@ impl Main {
                     );
                 }
             };
+
+            // If the move is a dying one then colour every piece gray.
+            if move_board == 0 {
+                background = Color32::DARK_GRAY;
+            }
 
             let mut piece_value = (piece_index + 1).to_string();
             piece_value.push_str(" ");
