@@ -58,7 +58,7 @@ impl Default for Main {
             unvalidated_games_to_simulate: String::from("100000"),
             could_parse_games: true,
             root_board: 511,
-            previous_boards: vec![511],
+            previous_boards: Vec::new(),
             parsed_moves: parse_moves(),
         }
     }
@@ -160,55 +160,67 @@ impl eframe::App for Main {
 impl Main {
     /// The code for drawing the top panel of the gui.
     fn top_panel(&mut self, context: &egui::Context, ui: &mut Ui) {
-        // Creates a button that will be used to recalculate the best moves.
-        let recalculate_window_button = ui.button("Recalculate");
+        ui.horizontal(|ui| {
+            // Creates a button that will be used to recalculate the best moves.
+            let recalculate_window_button = ui.button("Recalculate");
+            // Creates a button that will be used to reset the root board.
+            let reset_button = ui.button("Reset");
 
-        // Opens the window when the button is clicked.
-        if recalculate_window_button.clicked() {
-            self.recalculate_window_open = true;
-        }
 
-        // Creates a new window for the recalculating options.
-        Window::new(RECALCULATE)
-            .open(&mut self.recalculate_window_open)
-            .show(context, |ui| {
-                ui.set_width_range(100f32..=200f32);
+            // Opens the window when the button is clicked.
+            if recalculate_window_button.clicked() {
+                self.recalculate_window_open = true;
+            }
 
-                ui.heading(RichText::new("WARNING:").underline());
-                ui.label("This is very intensive.");
+            // Creates a new window for the recalculating options.
+            Window::new(RECALCULATE)
+                .open(&mut self.recalculate_window_open)
+                .show(context, |ui| {
+                    ui.set_width_range(100f32..=200f32);
 
-                ui.add_space(10.);
+                    ui.heading(RichText::new("WARNING:").underline());
+                    ui.label("This is very intensive.");
 
-                // Displays the amount of games to be simulated.
-                ui.label("Games to simulate:");
-                ui.horizontal(|ui| {
-                    // The text box for the value to parse.
-                    let text_box = ui.add(egui::TextEdit::singleline(&mut self.unvalidated_games_to_simulate));
+                    ui.add_space(10.);
 
-                    // If the text can't be parsed as an unsigned int show an error.
-                    match u32::from_str(self.unvalidated_games_to_simulate.as_ref()) {
-                        Ok(to_simulate) => {
-                            self.games_to_simulate = to_simulate;
-                            self.could_parse_games = true;
+                    // Displays the amount of games to be simulated.
+                    ui.label("Games to simulate:");
+                    ui.horizontal(|ui| {
+                        // The text box for the value to parse.
+                        let text_box = ui.add(egui::TextEdit::singleline(&mut self.unvalidated_games_to_simulate));
+
+                        // If the text can't be parsed as an unsigned int show an error.
+                        match u32::from_str(self.unvalidated_games_to_simulate.as_ref()) {
+                            Ok(to_simulate) => {
+                                self.games_to_simulate = to_simulate;
+                                self.could_parse_games = true;
+                            }
+                            Err(_) => {
+                                ui.label("⚠");
+                                self.could_parse_games = false;
+                            }
                         }
-                        Err(_) => {
-                            ui.label("⚠");
-                            self.could_parse_games = false;
-                        }
+
+                        // If the input is invalid then the text will lose focus.
+                        text_box.request_focus();
+                    });
+
+                    ui.add_space(10.);
+
+                    // Recalculates the values.
+                    let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
+                    if recalculate_button.clicked() && self.could_parse_games {
+                        Self::recalculate_best(self.games_to_simulate)
                     }
-
-                    // If the input is invalid then the text will lose focus.
-                    text_box.request_focus();
                 });
 
-                ui.add_space(10.);
 
-                // Recalculates the values.
-                let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
-                if recalculate_button.clicked() && self.could_parse_games {
-                    Self::recalculate_best(self.games_to_simulate)
-                }
-            });
+            // Resets the shown moves when clicked.
+            if reset_button.clicked() {
+                self.root_board = 511;
+                self.previous_boards = Vec::new()
+            }
+        });
     }
 
     fn central_panel(&self, context: &egui::Context, ui: &mut Ui) -> Option<Vec<(Id, Rect)>> {
