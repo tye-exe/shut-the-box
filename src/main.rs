@@ -1,17 +1,18 @@
 use std::fs::File;
-use std::io::{BufReader, ErrorKind};
+use std::io::BufReader;
 use std::str::FromStr;
 use std::thread;
 
 use eframe::egui;
 use eframe::epaint::Color32;
-use egui::{FontId, Id, Pos2, Rect, RichText, TextBuffer, TextFormat, Ui, Vec2, Window};
+use egui::{FontId, Id, Rect, RichText, TextBuffer, TextFormat, Ui, Vec2, Window};
 use egui::ahash::HashMap;
 use egui::text::LayoutJob;
 use rand::prelude::SliceRandom;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::__private::de::IdentifierDeserializer;
 use serde::de::{Error, Visitor};
+
 use board_roll::BoardRoll;
 
 use crate::simulation::playing;
@@ -43,7 +44,7 @@ struct Main {
     /// The current board having its moves displayed.
     root_board: u16,
     /// Stores the previous root board that was displayed
-    previous_bord: u16,
+    previous_boards: Vec<u16>,
     /// Stores the pre-calculated best moves from a simulation.
     parsed_moves: Option<HashMap<BoardRoll, u16>>,
 }
@@ -57,7 +58,7 @@ impl Default for Main {
             unvalidated_games_to_simulate: String::from("100000"),
             could_parse_games: true,
             root_board: 511,
-            previous_bord: 511,
+            previous_boards: vec![511],
             parsed_moves: parse_moves(),
         }
     }
@@ -82,7 +83,7 @@ impl Main {
         };
 
         playing::compute_weights(threads, games_to_simulate);
-        //todo!("Make this async & include a progress bar")
+        todo!("Make this async & include a progress bar")
     }
 }
 
@@ -93,47 +94,65 @@ impl eframe::App for Main {
 
         // Sets the content of the top panel
         egui::TopBottomPanel::top(Id::new(TOP_PANEL))
-                .show(context, |ui| {
-                    self.top_panel(context, ui)
-                });
+            .show(context, |ui| {
+                self.top_panel(context, ui)
+            });
 
         // Sets the content of the main window.
         egui::CentralPanel::default()
-                .show(context, |ui| {
-                    let board_info = self.central_panel(context, ui);
-                    // If the moves haven't been calculated yet return.
-                    if board_info.is_none() { return; }
-                    let board_info = board_info.unwrap();
+            .show(context, |ui| {
+                // Draws the best possible moves
+                let board_info = self.central_panel(context, ui);
 
-                    let mut clicked_on = None;
-                    for board_index in 0..board_info.len() {
-                        let board = board_info.get(board_index).expect("Will exist");
+                // If the moves haven't been calculated yet return.
+                if board_info.is_none() { return; }
+                let board_info = board_info.unwrap();
 
-                        let clicked = ui.interact(board.1, board.0, egui::Sense::click()).clicked();
-                        if !clicked { continue; }
+                // Checks if any of the move have been clicked on.
+                let mut clicked_on = None;
+                for board_index in 0..board_info.len() {
+                    let board = board_info.get(board_index).expect("Will exist");
 
-                        clicked_on = Some(board_index as u8)
+                    let clicked = ui.interact(board.1, board.0, egui::Sense::click()).clicked();
+                    if !clicked { continue; }
+
+                    clicked_on = Some(board_index as u8)
+                }
+
+                // If none of the boards were clicked on, return.
+                if clicked_on == None { return; }
+                let clicked_on = clicked_on.unwrap();
+
+                // Checks if the root board was clicked on.
+                // If it was move back.
+                if clicked_on == 0 {
+                    self.previous_boards.pop()
+                        .and_then(|last_board| {
+                            self.root_board = last_board;
+                            None::<u16>
+                        });
+
+                    return;
+                }
+
+                let best_moves = self.parsed_moves.as_ref().expect("Will exist as board info must exist to get to this point. Board info requires this to be some.");
+
+                let board_roll = BoardRoll::new(
+                    self.root_board,
+                    clicked_on + 1, // Clicked-on is one less than the value it should be.
+                );
+
+                // If the value doesn't exist, then it's a dying move.
+                match best_moves.get(&board_roll) {
+                    Some(best_move) => {
+                        self.previous_boards.push(self.root_board);
+                        self.root_board = *best_move
                     }
-
-                    // If none of the boards were clicked on, return.
-                    if clicked_on == None { return; }
-                    let clicked_on = clicked_on.unwrap();
-
-                    let best_moves = self.parsed_moves.as_ref().expect("Will exist as board info must exist to get to this point. Board info requires this to be some.");
-
-                    let board_roll = BoardRoll::new(
-                        self.root_board,
-                        clicked_on+1 // Clicked-on is one less than the value it should be.
-                    );
-
-                    // If the value doesn't exist, then it's a dying move.
-                    match best_moves.get(&board_roll) {
-                        Some(best_move) => {self.root_board = *best_move}
-                        None => {
-                            // Will execute on dying move
-                        }
-                    };
-                });
+                    None => {
+                        // Will execute on dying move
+                    }
+                };
+            });
     }
 }
 
@@ -151,45 +170,45 @@ impl Main {
 
         // Creates a new window for the recalculating options.
         Window::new(RECALCULATE)
-                .open(&mut self.recalculate_window_open)
-                .show(context, |ui| {
-                    ui.set_width_range(100f32..=200f32);
+            .open(&mut self.recalculate_window_open)
+            .show(context, |ui| {
+                ui.set_width_range(100f32..=200f32);
 
-                    ui.heading(RichText::new("WARNING:").underline());
-                    ui.label("This is very intensive.");
+                ui.heading(RichText::new("WARNING:").underline());
+                ui.label("This is very intensive.");
 
-                    ui.add_space(10.);
+                ui.add_space(10.);
 
-                    // Displays the amount of games to be simulated.
-                    ui.label("Games to simulate:");
-                    ui.horizontal(|ui| {
-                        // The text box for the value to parse.
-                        let text_box = ui.add(egui::TextEdit::singleline(&mut self.unvalidated_games_to_simulate));
+                // Displays the amount of games to be simulated.
+                ui.label("Games to simulate:");
+                ui.horizontal(|ui| {
+                    // The text box for the value to parse.
+                    let text_box = ui.add(egui::TextEdit::singleline(&mut self.unvalidated_games_to_simulate));
 
-                        // If the text can't be parsed as an unsigned int show an error.
-                        match u32::from_str(self.unvalidated_games_to_simulate.as_ref()) {
-                            Ok(to_simulate) => {
-                                self.games_to_simulate = to_simulate;
-                                self.could_parse_games = true;
-                            }
-                            Err(_) => {
-                                ui.label("⚠");
-                                self.could_parse_games = false;
-                            }
+                    // If the text can't be parsed as an unsigned int show an error.
+                    match u32::from_str(self.unvalidated_games_to_simulate.as_ref()) {
+                        Ok(to_simulate) => {
+                            self.games_to_simulate = to_simulate;
+                            self.could_parse_games = true;
                         }
-
-                        // If the input is invalid then the text will lose focus.
-                        text_box.request_focus();
-                    });
-
-                    ui.add_space(10.);
-
-                    // Recalculates the values.
-                    let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
-                    if recalculate_button.clicked() && self.could_parse_games {
-                        Self::recalculate_best(self.games_to_simulate)
+                        Err(_) => {
+                            ui.label("⚠");
+                            self.could_parse_games = false;
+                        }
                     }
+
+                    // If the input is invalid then the text will lose focus.
+                    text_box.request_focus();
                 });
+
+                ui.add_space(10.);
+
+                // Recalculates the values.
+                let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
+                if recalculate_button.clicked() && self.could_parse_games {
+                    Self::recalculate_best(self.games_to_simulate)
+                }
+            });
     }
 
     fn central_panel(&self, context: &egui::Context, ui: &mut Ui) -> Option<Vec<(Id, Rect)>> {
@@ -240,6 +259,21 @@ impl Main {
     fn generate_root_board(root_board: u16) -> LayoutJob {
         let root_pieces = Self::board_to_array(root_board);
         let mut board_text = LayoutJob::default();
+
+        board_text.append(
+            "<--",
+            0.,
+            TextFormat {
+                background: Color32::BLUE,
+                ..Default::default()
+            },
+        );
+
+        board_text.append(
+            " || ",
+            0.,
+            TextFormat::default(),
+        );
 
         // Iterates from the highest to lowest pieces.
         for piece_index in (0..9u8).rev() {
