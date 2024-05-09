@@ -7,27 +7,10 @@ use std::sync::mpsc;
 use std::thread;
 
 use fastrand::Rng;
-use serde::{Serialize, Serializer};
+use crate::board_roll::BoardRoll;
 
-use crate::{get_board, get_rand_board};
-use crate::board::Board;
-use crate::playing::Result::{DRAW, LOSS, WIN};
-
-/// Contains a possible board & a possible roll.
-/// This will be used as a key to look the next move.
-#[derive(Eq, PartialEq, Hash, Copy, Clone)]
-struct BoardRoll {
-    board: u16,
-    roll: u8,
-}
-
-impl Serialize for BoardRoll {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer {
-        serializer.collect_str(
-            &format!("{}-{}", self.board, self.roll)
-        )
-    }
-}
+use crate::simulation::board::{Board, get_board, get_rand_board};
+use crate::simulation::playing::Result::{DRAW, LOSS, WIN};
 
 
 /// A wrapper struct to store the moves taken in a game & the result of the game.
@@ -171,7 +154,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32) {
             roll: choice.roll,
         };
 
-        // If the map contains a choice that wins more often discard this choice.
+        // If the map contains a choice that looses more often discard this choice.
         if let Some(existing) = weight_map.get(&board_roll) {
             if *existing < win_average { continue; }
         }
