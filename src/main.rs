@@ -1,6 +1,8 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::str::FromStr;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 
 use eframe::egui;
@@ -33,6 +35,11 @@ struct Main {
     recalculate_window_open: bool,
     /// Whether the best moves are being recalculated.
     recalculation_in_progress: bool,
+    /// Contains the receiver connected to the game recalculation.
+    recalculation_receiver: Option<Receiver<bool>>,
+    /// Whether there was an error recalculating.
+    recalculation_error: bool,
+
     /// The amount of games to simulate.
     games_to_simulate: u32,
     /// The unvalidated amount of games to simulate.
@@ -54,6 +61,8 @@ impl Default for Main {
         Main {
             recalculate_window_open: false,
             recalculation_in_progress: false,
+            recalculation_receiver: None,
+            recalculation_error: false,
             games_to_simulate: 100000,
             unvalidated_games_to_simulate: String::from("100000"),
             could_parse_games: true,
@@ -74,7 +83,7 @@ fn parse_moves() -> Option<HashMap<BoardRoll, u16>> {
 }
 
 impl Main {
-    fn recalculate_best(games_to_simulate: u32) {
+    fn recalculate_best(games_to_simulate: u32) -> Receiver<bool> {
         // Gets the amount of threads a system has.
         // Defaults to 4.
         let threads = match thread::available_parallelism() {
@@ -82,8 +91,13 @@ impl Main {
             Err(_) => { 4 }
         };
 
-        playing::compute_weights(threads, games_to_simulate);
-        todo!("Make this async & include a progress bar")
+        // Creates channels to check the status of the recalculation.
+        let (tx, rx) = mpsc::channel();
+        // Runs the calculation async so the gui still works.
+        thread::spawn(move || {
+            playing::compute_weights(threads, games_to_simulate, tx);
+        });
+        rx
     }
 }
 
@@ -101,6 +115,13 @@ impl eframe::App for Main {
         // Sets the content of the main window.
         egui::CentralPanel::default()
             .show(context, |ui| {
+                // If a recalculation is in progress, don't display the boards.
+                if self.recalculation_in_progress {
+                    ui.heading("Recalculating...");
+                    ui.spinner();
+                    return;
+                }
+
                 // Draws the best possible moves
                 let board_info = self.central_panel(context, ui);
 
@@ -111,9 +132,9 @@ impl eframe::App for Main {
                 // Checks if any of the move have been clicked on.
                 let mut clicked_on = None;
                 for board_index in 0..board_info.len() {
-                    let board = board_info.get(board_index).expect("Will exist");
+                    let (board_id, board_rect) = *board_info.get(board_index).expect("Will exist");
 
-                    let clicked = ui.interact(board.1, board.0, egui::Sense::click()).clicked();
+                    let clicked = ui.interact(board_rect, board_id, egui::Sense::click()).clicked();
                     if !clicked { continue; }
 
                     clicked_on = Some(board_index as u8)
@@ -172,6 +193,11 @@ impl Main {
                 self.recalculate_window_open = true;
             }
 
+            // If there is a recalculation in progress then don't let the window close.
+            if self.recalculation_in_progress == true {
+                self.recalculate_window_open = true
+            };
+
             // Creates a new window for the recalculating options.
             Window::new(RECALCULATE)
                 .open(&mut self.recalculate_window_open)
@@ -207,10 +233,54 @@ impl Main {
 
                     ui.add_space(10.);
 
-                    // Recalculates the values.
-                    let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
-                    if recalculate_button.clicked() && self.could_parse_games {
-                        Self::recalculate_best(self.games_to_simulate)
+                    // If there isn't an ongoing calculation then display the option to start one.
+                    if !self.recalculation_in_progress {
+                        let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
+
+                        // Recalculates the values if the button is clicked.
+                        if recalculate_button.clicked() && self.could_parse_games {
+                            let receiver = Self::recalculate_best(self.games_to_simulate);
+
+                            // Default values for recalculation.
+                            self.recalculation_receiver = Some(receiver);
+                            self.recalculation_in_progress = true;
+                            self.recalculation_error = false;
+                        }
+
+                        return;
+                    }
+
+                    // Will execute if there is an ongoing calculation.
+
+                    // Spin! :)
+                    ui.spinner();
+
+                    let receiver = match self.recalculation_receiver.as_ref() {
+                        Some(receiver) => receiver,
+                        // If there was no receiver then an error occurred
+                        None => {
+                            self.recalculation_error = true;
+                            return;
+                        }
+                    };
+
+                    let result = receiver.try_recv();
+
+                    // If the result was okay then the calculation finished successfully.
+                    if result.is_ok() {
+                        self.recalculation_in_progress = false;
+                        self.recalculation_receiver = None;
+                        self.recalculation_error = false;
+                        self.parsed_moves = parse_moves();
+                    }
+
+                    if result.is_err() {
+                        match result.unwrap_err() {
+                            // If no message has been sent continue waiting.
+                            TryRecvError::Empty => { return; }
+                            // If the channel disconnected there must have been an error.
+                            TryRecvError::Disconnected => { self.recalculation_error = true; }
+                        }
                     }
                 });
 
@@ -265,6 +335,7 @@ impl Main {
             return Some(board_info);
         }
 
+        ui.heading("No moves found ;-;");
         None
     }
 

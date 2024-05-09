@@ -4,14 +4,14 @@ use std::hash::Hash;
 use std::io::BufWriter;
 use std::ops::Div;
 use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::thread;
 
 use fastrand::Rng;
-use crate::board_roll::BoardRoll;
 
+use crate::board_roll::BoardRoll;
 use crate::simulation::board::{Board, get_board, get_rand_board};
 use crate::simulation::playing::Result::{DRAW, LOSS, WIN};
-
 
 /// A wrapper struct to store the moves taken in a game & the result of the game.
 pub struct Games {
@@ -90,7 +90,7 @@ pub enum Result {
 
 /// Randomly simulates the given amount of games to play on the number of given threads.
 /// This method writes the best move for each board-roll combination to "best_moves.yml"
-pub fn compute_weights(threads: u8, games_to_play: u32) {
+pub fn compute_weights(threads: u8, games_to_play: u32, sender: Sender<bool>) {
     let mut win_weights: HashMap<Choice, Weight> = HashMap::new();
     let (tx, rx) = mpsc::channel();
 
@@ -119,7 +119,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32) {
     }
 
     // Waits for each thread to finish & merges its results into the main map.
-    for finished_threads in 0..threads {
+    for _finished_threads in 0..threads {
         let thread_map = rx.recv().expect("Should always receive a value");
 
         for choice in thread_map.keys() {
@@ -135,7 +135,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32) {
             existing_weight.combine(thread_weight);
         }
 
-        println!("Games simulated: {}", (finished_threads + 1) as u32 * games_to_play);
+        //println!("Games simulated: {}", (finished_threads + 1) as u32 * games_to_play);
     }
 
 
@@ -175,6 +175,8 @@ pub fn compute_weights(threads: u8, games_to_play: u32) {
     let file = File::create("best_moves.yml").expect("Should be able to create file.");
     let writer = BufWriter::new(file);
     serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
+
+    sender.send(true).expect("Receiver will be listening until this is sent.");
 }
 
 
