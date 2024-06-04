@@ -1,2 +1,9 @@
+# rust
 /target
-/.idea/*
+
+# vscode file history
+.history
+
+# gui debug files
+best_moves.yml
+move_chances.yml

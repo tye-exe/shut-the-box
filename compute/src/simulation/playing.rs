@@ -119,7 +119,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32, sender: Sender<bool>) {
     }
 
     // Waits for each thread to finish & merges its results into the main map.
-    for _finished_threads in 0..threads {
+    for finished_threads in 0..threads {
         let thread_map = rx.recv().expect("Should always receive a value");
 
         for choice in thread_map.keys() {
@@ -135,7 +135,7 @@ pub fn compute_weights(threads: u8, games_to_play: u32, sender: Sender<bool>) {
             existing_weight.combine(thread_weight);
         }
 
-        //println!("Games simulated: {}", (finished_threads + 1) as u32 * games_to_play);
+        println!("Games simulated: {}", (finished_threads + 1) as u32 * games_to_play);
     }
 
 
@@ -174,6 +174,11 @@ pub fn compute_weights(threads: u8, games_to_play: u32, sender: Sender<bool>) {
     // Writes the data to the file to be referenced later.
     let file = File::create("best_moves.yml").expect("Should be able to create file.");
     let writer = BufWriter::new(file);
+    serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
+
+    // Dumps the raw & win chances
+    let chances = File::create("move_chances.yml").expect("Should be able to create file.");
+    let writer = BufWriter::new(chances);
     serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
 
     sender.send(true).expect("Receiver will be listening until this is sent.");

@@ -7,27 +7,17 @@ use std::thread;
 
 use eframe::egui;
 use eframe::epaint::Color32;
-use egui::{FontId, Id, Rect, RichText, TextBuffer, TextFormat, Ui, Vec2, Window};
 use egui::ahash::HashMap;
 use egui::text::LayoutJob;
-use rand::prelude::SliceRandom;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::__private::de::IdentifierDeserializer;
-use serde::de::{Error, Visitor};
+use egui::{FontId, Id, Rect, RichText, TextFormat, Ui, Vec2, Window};
 
-use board_roll::BoardRoll;
-
-use crate::simulation::playing;
-
-mod simulation;
-mod board_roll;
+use compute::board_roll::BoardRoll;
 
 // The id's for the panels.
 const WINDOW_NAME: &'static str = "Shut The Box";
 const TOP_PANEL: &'static str = "Top Panel";
 const RECALCULATE: &'static str = "Recalculate";
 const ROLL_BOARD_TABLE: &'static str = "Roll Board Table";
-
 
 struct Main {
     // Vars to do with the recalculation window
@@ -75,8 +65,10 @@ impl Default for Main {
 
 fn parse_moves() -> Option<HashMap<BoardRoll, u16>> {
     let file = match File::open("best_moves.yml") {
-        Ok(file) => { file }
-        Err(_) => { return None; }
+        Ok(file) => file,
+        Err(_) => {
+            return None;
+        }
     };
     let reader = BufReader::new(file);
     serde_yaml::from_reader(reader).ok()
@@ -87,15 +79,15 @@ impl Main {
         // Gets the amount of threads a system has.
         // Defaults to 4.
         let threads = match thread::available_parallelism() {
-            Ok(number) => { number.get() as u8 }
-            Err(_) => { 4 }
+            Ok(number) => number.get() as u8,
+            Err(_) => 4,
         };
 
         // Creates channels to check the status of the recalculation.
         let (tx, rx) = mpsc::channel();
         // Runs the calculation async so the gui still works.
         thread::spawn(move || {
-            playing::compute_weights(threads, games_to_simulate, tx);
+            compute::compute(threads, games_to_simulate, tx);
         });
         rx
     }
@@ -108,9 +100,7 @@ impl eframe::App for Main {
 
         // Sets the content of the top panel
         egui::TopBottomPanel::top(Id::new(TOP_PANEL))
-            .show(context, |ui| {
-                self.top_panel(context, ui)
-            });
+            .show(context, |ui| self.top_panel(context, ui));
 
         // Sets the content of the main window.
         egui::CentralPanel::default()
@@ -187,7 +177,6 @@ impl Main {
             // Creates a button that will be used to reset the root board.
             let reset_button = ui.button("Reset");
 
-
             // Opens the window when the button is clicked.
             if recalculate_window_button.clicked() {
                 self.recalculate_window_open = true;
@@ -213,7 +202,9 @@ impl Main {
                     ui.label("Games to simulate:");
                     ui.horizontal(|ui| {
                         // The text box for the value to parse.
-                        let text_box = ui.add(egui::TextEdit::singleline(&mut self.unvalidated_games_to_simulate));
+                        let text_box = ui.add(egui::TextEdit::singleline(
+                            &mut self.unvalidated_games_to_simulate,
+                        ));
 
                         // If the text can't be parsed as an unsigned int show an error.
                         match u32::from_str(self.unvalidated_games_to_simulate.as_ref()) {
@@ -235,7 +226,8 @@ impl Main {
 
                     // If there isn't an ongoing calculation then display the option to start one.
                     if !self.recalculation_in_progress {
-                        let recalculate_button = ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
+                        let recalculate_button =
+                            ui.button(RichText::new("Recalculate").color(Color32::LIGHT_RED));
 
                         // Recalculates the values if the button is clicked.
                         if recalculate_button.clicked() && self.could_parse_games {
@@ -277,13 +269,16 @@ impl Main {
                     if result.is_err() {
                         match result.unwrap_err() {
                             // If no message has been sent continue waiting.
-                            TryRecvError::Empty => { return; }
+                            TryRecvError::Empty => {
+                                return;
+                            }
                             // If the channel disconnected there must have been an error.
-                            TryRecvError::Disconnected => { self.recalculation_error = true; }
+                            TryRecvError::Disconnected => {
+                                self.recalculation_error = true;
+                            }
                         }
                     }
                 });
-
 
             // Resets the shown moves when clicked.
             if reset_button.clicked() {
@@ -296,18 +291,16 @@ impl Main {
     fn central_panel(&self, context: &egui::Context, ui: &mut Ui) -> Option<Vec<(Id, Rect)>> {
         // Checks if best moves have been calculated.
         if let Some(best_moves) = &self.parsed_moves {
-
             // Creates a vec which will store the position & id of each displayed board.
             let mut board_info = Vec::with_capacity(13);
 
             // Generates the layout for the root board.
             let root_layout = Self::generate_root_board(self.root_board);
-            let gallery = context.fonts(|fonts| {
-                fonts.layout_job(root_layout)
-            });
+            let gallery = context.fonts(|fonts| fonts.layout_job(root_layout));
 
             // Displays the root board.
-            ui.painter().galley(ui.next_widget_position(), gallery, Color32::WHITE);
+            ui.painter()
+                .galley(ui.next_widget_position(), gallery, Color32::WHITE);
             // Saves the info about the root board to use later.
             board_info.push(ui.allocate_space(Vec2::new(100., 30.)));
 
@@ -322,12 +315,11 @@ impl Main {
 
             // Iterates over the generate board & displays them.
             for layout in board_layouts {
-                let gallery = context.fonts(|fonts| {
-                    fonts.layout_job(layout)
-                });
+                let gallery = context.fonts(|fonts| fonts.layout_job(layout));
 
                 // Draws the board
-                ui.painter().galley(ui.next_widget_position(), gallery, Color32::WHITE);
+                ui.painter()
+                    .galley(ui.next_widget_position(), gallery, Color32::WHITE);
                 // Saves the info about the drawn board for later use.
                 board_info.push(ui.allocate_space(Vec2::new(100., 20.)));
             }
@@ -352,11 +344,7 @@ impl Main {
             },
         );
 
-        board_text.append(
-            " || ",
-            0.,
-            TextFormat::default(),
-        );
+        board_text.append(" || ", 0., TextFormat::default());
 
         // Iterates from the highest to lowest pieces.
         for piece_index in (0..9u8).rev() {
@@ -364,9 +352,9 @@ impl Main {
 
             let background = match root_piece {
                 // If the piece is alive then it should be green.
-                true => { Color32::DARK_GREEN }
+                true => Color32::DARK_GREEN,
                 // If the piece is down, then it should be grayed out.
-                false => { Color32::DARK_GRAY }
+                false => Color32::DARK_GRAY,
             };
 
             // Gets the value of the piece as a string.
@@ -400,7 +388,9 @@ impl Main {
 
         // If the roll is only a single digit add an extra two spaces, so
         // it lines up with the two digit rolls.
-        if roll_value < 10 { roll_string.push_str("  "); }
+        if roll_value < 10 {
+            roll_string.push_str("  ");
+        }
 
         board_text.append(
             roll_string.as_str(),
@@ -412,12 +402,7 @@ impl Main {
         );
 
         // Adds padding text to separate the roll value from the board.
-        board_text.append(
-            " || ",
-            0.,
-            TextFormat::default(),
-        );
-
+        board_text.append(" || ", 0., TextFormat::default());
 
         // Iterates from the highest to lowest pieces.
         for piece_index in (0..9u8).rev() {
@@ -426,11 +411,11 @@ impl Main {
 
             let mut background = match (root_piece, move_piece) {
                 // If both pieces are alive, it wasn't affected in the move.
-                (true, true) => { Color32::DARK_GREEN }
+                (true, true) => Color32::DARK_GREEN,
                 // If both piece are down, then they should be grayed out.
-                (false, false) => { Color32::DARK_GRAY }
+                (false, false) => Color32::DARK_GRAY,
                 // If the root piece is alive & the move one isn't then it will get knocked down.
-                (true, false) => { Color32::GOLD }
+                (true, false) => Color32::GOLD,
                 // It shouldn't be possible that a root piece is dead, yet a move piece is alive.
                 (false, true) => {
                     return LayoutJob::simple_singleline(
