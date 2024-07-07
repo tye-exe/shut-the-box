@@ -1,8 +1,9 @@
 # rust
 /target
 
-# vscode file history
+# vscode
 .history
+.vscode
 
 # gui debug files
 best_moves.yml

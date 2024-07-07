@@ -1,12 +1,9 @@
-use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, process::ExitCode};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use clap::{ArgAction, Parser};
-use client::Client;
-use server::Server;
+use clap::Parser;
 
-mod client;
-mod lib;
-mod server;
+mod client_states;
+mod server_state;
 mod states;
 
 /// A small program to act as a server or client in a game of shut the box.
@@ -30,36 +27,39 @@ pub struct CliArgs {
     debug: bool,
 }
 
-fn main() -> ExitCode {
+fn main() {
     let args = CliArgs::parse();
-    
+
     if args.debug {
         println!("-- In debug mode --");
         // Loopback socket address
         let loopback_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3333);
-        Server::new(loopback_socket).start();
+        server_state::start(loopback_socket);
     }
 
     // If no IP was given prompt for one
     let ip_address = match args.ip_address {
-        Some(val) => {val},
-        None => {lib::get_ip_input()},
+        Some(val) => val,
+        None => networked::get_ip_input(),
     };
 
     let socket_address = SocketAddr::new(ip_address, args.port);
 
     match args.role.to_ascii_lowercase().as_str() {
         "server" => {
-            println!("Starting server on {}:{}", socket_address.ip(), socket_address.port());
-            Server::new(socket_address).start()
+            println!(
+                "Starting server on {}:{}",
+                socket_address.ip(),
+                socket_address.port()
+            );
+            server_state::start(socket_address);
         }
         "client" => {
             println!("Starting client");
-            Client::new(socket_address).start()
+            client_states::start(socket_address);
         }
         _ => {
             println!("Invalid arg, must be either \"server\" or \"client\". Exiting");
-            ExitCode::FAILURE
         }
     }
 }

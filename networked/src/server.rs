@@ -1,17 +1,11 @@
 use fastrand::Rng;
 use mac_address2::MacAddress;
+use networked::Channels;
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt::Display;
-use std::io::Read;
-use std::io::Write;
-use std::net::IpAddr;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::net::TcpListener;
-use std::net::TcpStream;
 use std::process::ExitCode;
-use std::sync::mpsc;
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -19,25 +13,18 @@ use crate::server::ServerState::ListeningForClients;
 use crate::states::ClientMessages;
 use crate::states::ServerMessages;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 enum ServerError {
+    #[error("Client sent a back packaet: {client_message:?}")]
     BadClientPacket { client_message: Option<String> },
 }
-
-impl Display for ServerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "no")
-    }
-}
-
-impl Error for ServerError {}
 
 /// Contains all the different states the server could be in.
 enum ServerState {
     ListeningForClients {
-        to_process: Vec<ClientChannels>,
-        connected: u8,
-        ready: u8,
+        to_process: Vec<Channels<ClientMessages, ServerMessages>>,
+        previous_connected: u32,
+        previous_ready: u32,
     },
 }
 
@@ -49,12 +36,6 @@ impl PartialEq for ServerState {
     }
 }
 
-/// Wrapper to hold the read & write threads to a client.
-struct ClientChannels {
-    reading: mpsc::Receiver<Result<ClientMessages, Box<ServerError>>>,
-    writing: mpsc::Sender<ServerMessages>,
-}
-
 pub struct Server {
     // Internal state
     server_state: ServerState,
@@ -63,7 +44,7 @@ pub struct Server {
     listener: TcpListener,
 
     rng: Rng,
-    client_connections: HashMap<MacAddress, ClientChannels>,
+    client_connections: HashMap<MacAddress, Client>,
 }
 
 impl Server {
@@ -75,8 +56,8 @@ impl Server {
         Server {
             server_state: ListeningForClients {
                 to_process: Default::default(),
-                connected: 0,
-                ready: 0,
+                previous_connected: 0,
+                previous_ready: 0,
             },
             listener,
             rng: Rng::new(),
@@ -85,27 +66,36 @@ impl Server {
     }
 
     /// Starts the server.
-    pub fn start(mut self) -> ExitCode {
-        // The server will use it's internal state to determine what action it should perform.
-        loop {
-            match &self.server_state {
-                ListeningForClients { .. } => {
-                    self.listening_for_clients();
-                    self.register_client();
-                }
-            }
+    // pub fn start(mut self) -> ExitCode {
+    //     // The server will use it's internal state to determine what action it should perform.
+    //     loop {
+    //         match self.server_state {
+    //             ListeningForClients {
+    //                 ref mut to_process,
+    //                 ref mut previous_connected,
+    //                 ref mut previous_ready,
+    //             } => {
+    //                 self.listening_for_clients(to_process);
 
-            sleep(Duration::from_millis(100))
-        }
-    }
+    //                 self.register_client(to_process);
+    //                 self.clients_ready(to_process, previous_connected, previous_ready);
+    //             }
+    //         }
 
-    fn listening_for_clients(&mut self) {
+    //         sleep(Duration::from_millis(100))
+    //     }
+    // }
+
+    fn listening_for_clients(
+        self,
+        clients_to_process: &mut Vec<Channels<ClientMessages, ServerMessages>>,
+    ) {
         self.listener
             .set_nonblocking(true)
             .expect("Cannot set non-blocking.");
 
-        let client_channels: ClientChannels = match self.listener.accept() {
-            Ok((stream, _addr)) => self.initialize_client(stream),
+        let client_channels = match self.listener.accept() {
+            Ok((stream, _addr)) => networked::initialize_channels(stream),
 
             // If it's `WouldBlock` then there is no connection to handle.
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => return,
@@ -116,89 +106,18 @@ impl Server {
             }
         };
 
-        // Adds the clients to queue for receiving their mac address before full assignment
-        match &mut self.server_state {
-            ListeningForClients {
-                to_process: vec, ..
-            } => {
-                vec.push(client_channels);
-            }
-            _ => unreachable!("Must be of variant ListeningForClients"),
-        };
+        clients_to_process.push(client_channels);
     }
 
-    fn initialize_client(&mut self, tcp_stream: TcpStream) -> ClientChannels {
-        let (read_sender, read_receiver) = mpsc::channel();
-        let (write_sender, write_receiver) = mpsc::channel();
-
-        let mut read_stream = tcp_stream.try_clone().expect("Cannot clone tcp stream.");
-        let mut write_stream = tcp_stream;
-
-        // Reading thread
-        thread::spawn(move || loop {
-            let mut data = String::new();
-
-            read_stream.read
-
-            // Reads the data the client sent from the stream
-            // let client_message: Result<ClientMessages, Box<ServerError>> = read_stream
-            //     .read_to_string(&mut data)
-            //     .map_err(|_| {
-            //         Box::new(ServerError::BadClientPacket {
-            //             client_message: (Option::None),
-            //         })
-            //     })
-            //     // Parses the string into a Client Message
-            //     .and_then(|_| {
-            //         serde_yml::from_str(&data).map_err(|_| {
-            //             Box::new(ServerError::BadClientPacket {
-            //                 client_message: (Some(data.clone())),
-            //             })
-            //         })
-            //     });
-
-            println!("{:?}", client_message);
-
-            // When the receiver is dropped the thread should terminate
-            if read_sender.send(client_message).is_err() {
-                break;
-            };
-        });
-
-        // Writing thread
-        thread::spawn(move || loop {
-            let received = write_receiver.recv();
-            // When the sender is dropped the thread should terminate
-            if received.is_err() {
-                break;
-            }
-
-            let data_to_send: ServerMessages = received.unwrap();
-            let data_to_send = serde_yml::to_string(&data_to_send)
-                .expect("Couldn't serializes Client Message to send.");
-
-            write_stream
-                .write_all(data_to_send.as_bytes())
-                .expect("Couldn't send data to Client.");
-        });
-
-        // Wrapper struct
-        ClientChannels {
-            reading: read_receiver,
-            writing: write_sender,
-        }
-    }
-
-    fn register_client(&mut self) {
+    fn register_client(
+        &self,
+        clients_to_process: &mut Vec<Channels<ClientMessages, ServerMessages>>,
+    ) {
         // Adds the clients to queue for receiving their mac address before full assignment
-        let (clients_to_process, connected_clients) = match &mut self.server_state {
-            ListeningForClients {
-                to_process,
-                connected,
-                ..
-            } => (to_process, connected),
-            _ => unreachable!("Must be of variant ListeningForClients"),
-        };
+        // let clients_to_process = match &mut self.server_state {
+        //     ListeningForClients { to_process, .. } => to_process,
+        //     _ => unreachable!("Must be of variant ListeningForClients"),
+        // };
 
         // Stores the indices of the clients to drop.
         let mut to_remove = Vec::new();
@@ -217,7 +136,7 @@ impl Server {
 
             // Only an OptIn message is accepted currently.
             match received {
-                Ok(val) => {
+                Some(val) => {
                     if let ClientMessages::OptInForPlaying(mac_address) = val {
                         to_add.push((index, mac_address));
                         continue;
@@ -230,8 +149,8 @@ impl Server {
                     to_remove.push(index);
                     continue;
                 }
-                Err(err) => {
-                    eprintln!("A client sent a bad packet, dropping client. Packet: {err}");
+                None => {
+                    eprintln!("A client sent a bad packet, dropping client.");
                     to_remove.push(index);
                     continue;
                 }
@@ -246,8 +165,8 @@ impl Server {
                 .send(ServerMessages::OptInAccept)
                 .expect("Couldn't accept client");
 
-            self.client_connections.insert(to_add.1, client_channels);
-            *connected_clients += 1;
+            // self.client_connections
+            //     .insert(to_add.1, Client::new(client_channels));
         }
 
         // Drops the clients that sent bad packets
@@ -259,6 +178,46 @@ impl Server {
                 .expect("Couldn't gracefully disconnect from client.");
         }
     }
+
+    fn clients_ready(
+        &self,
+        clients_to_process: &mut Vec<Channels<ClientMessages, ServerMessages>>,
+        previous_connected: &mut u32,
+        previous_ready: &mut u32,
+    ) {
+        let connected = self.client_connections.len() as u32;
+
+        let ready = self
+            .client_connections
+            .values()
+            .try_fold(0, |acc, e| match e.state {
+                ClientStates::Start { ready } => Ok(acc + ready as u32),
+                _ => Err(()),
+            })
+            .ok()
+            .expect("A client wasn't in the start state");
+
+        if ready == connected {};
+
+        if connected != *previous_connected || ready != *previous_ready {};
+    }
 }
 
-struct Client {}
+struct Client {
+    connection: Channels<ClientMessages, ServerMessages>,
+    state: ClientStates,
+}
+
+enum ClientStates {
+    Start { ready: bool },
+    Playing,
+}
+
+impl Client {
+    fn new(connection: Channels<ClientMessages, ServerMessages>) -> Client {
+        Client {
+            connection,
+            state: ClientStates::Start { ready: false },
+        }
+    }
+}

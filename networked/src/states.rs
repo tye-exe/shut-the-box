@@ -21,11 +21,11 @@ pub enum ClientMessages {
     ChosenMove(ClientMove),
 
     /// If there was an error inform the server
-    Error(ClientError)
+    Error(ClientError),
 }
 
 /// Contains every message that the server could send.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum ServerMessages {
     // Joining
     /// Informs the client that they were accepted into the game.
@@ -54,20 +54,20 @@ pub enum ServerMessages {
     SendLoss(WinningScore),
 
     /// If there was an error inform the client
-    Error(ServerError)
+    Error(ServerError),
 }
 
 // Data types //
 
 /// Whether the client wants one dice rolled or two dice rolled.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub enum RollRequest {
     BothDice,
     SingleDice,
 }
 
 /// Contains the possible dice the client used when making the move
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub enum ClientMove {
     BothDice(ClientMovedBoard),
     FirstDice(ClientMovedBoard),
@@ -76,37 +76,34 @@ pub enum ClientMove {
 }
 
 /// Contains the board the client made the move to.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct ClientMovedBoard(u16);
 
-
 /// Contains the winners score.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct WinningScore(u8);
 
 /// Contains the amount of players that you drew with.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct DrawingPlayerAmount(u8);
 
-
 /// Contains the data for the client to make a move upon.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub enum ClientToMove {
     /// Contains the board state of the current game & one rolled dice.
     OneDice(u16, u8),
     /// Contains the board state of the current game & two rolled dice.
-    TwoDice{board: u16, dice_1: u8, dice_2: u8}
+    TwoDice { board: u16, dice_1: u8, dice_2: u8 },
 }
 
 // Errors //
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub enum ServerError {
     /// Sent to the client if it requests a move before requesting a roll.
-    MoveBeforeRoll
+    MoveBeforeRoll,
+    UnexpectedDisconnect,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub enum ClientError {
-    
-}
+pub enum ClientError {}
