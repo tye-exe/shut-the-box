@@ -2,16 +2,18 @@ use std::sync::Arc;
 
 use fastrand::Rng;
 
+use crate::DiceRoll;
+
 /// Contains the value of a roll & the possible boards it could lead to in reference to the board containing this roll instance.
 #[derive(Debug)]
 pub struct Roll {
-    pub roll_value: u8,
+    pub roll: DiceRoll,
     pub boards: Arc<[u16]>,
 }
 
 impl Roll {
     /// Simulates every valid board combination for the given roll from the given alive pieces.
-    pub fn new(rolled_value: u8, board: u16) -> Roll {
+    pub fn new(roll: DiceRoll, board: u16) -> Roll {
         let mut boards = Vec::new();
         // The amount of unique boards is all the alive pieces as the alive pieces are stored in binary.
         // Counting up to the max value of a binary number with the same number of digits as alive pieces
@@ -25,7 +27,7 @@ impl Roll {
             // Checks if the simulated move would add up to the rolled value.
             // If it doesn't, then it's not a valid move.
             let possible_move = Self::sum_move(unique_board, numeric_board.clone());
-            if possible_move != rolled_value {
+            if possible_move != roll.get_value() {
                 continue;
             }
 
@@ -33,13 +35,13 @@ impl Roll {
         }
 
         Roll {
-            roll_value: rolled_value,
+            roll,
             boards: boards.into(),
         }
     }
 
     /// Converts the binary bored into an arc containing the numeric value of each piece.
-    fn pieces(alive_pieces: u16) -> Arc<[u8]> {
+    pub fn pieces(alive_pieces: u16) -> Arc<[u8]> {
         let mut numeric_value = Vec::with_capacity(9);
         // If the higher pieces are dead, then don't iterate over them.
         let max_iterations = (16 - alive_pieces.leading_zeros()) as u8;
@@ -58,7 +60,7 @@ impl Roll {
 
     /// Converts the binary encoded board combination to its numeric value.
     /// For example, 0101 would become the value of the numbers at index 2 + index 0 of the given vector.
-    fn sum_move(move_to_sum: u16, alive_pieces: Arc<[u8]>) -> u8 {
+    pub fn sum_move(move_to_sum: u16, alive_pieces: Arc<[u8]>) -> u8 {
         let mut numeric_move_sum: u8 = 0;
 
         for piece_index in 0..alive_pieces.len() {
@@ -74,7 +76,7 @@ impl Roll {
     }
 
     /// Returns the board after the given move has been performed.
-    fn preform_move(move_to_perform: u16, alive_pieces: Arc<[u8]>) -> u16 {
+    pub fn preform_move(move_to_perform: u16, alive_pieces: Arc<[u8]>) -> u16 {
         // This function can't be a negative bitmask, as the pieces in the move to perform don't correlate
         // to the pieces in the board given in the new() function.
 

@@ -8,7 +8,7 @@ use crate::simulation::roll::Roll;
 
 // Binary representation of the board within the u16:
 // 0000000 | 000000000
-// 0000000 | 987654321
+// _______ | 987654321
 
 /// Stores all the computed boards
 static BOARDS: OnceLock<Arc<[Board]>> = OnceLock::new();
@@ -60,11 +60,38 @@ impl Board {
     ///
     /// Binary representation of the board within the u16:
     ///  0000000 | 000000000
-    ///  0000000 | 987654321
+    ///  _______ | 987654321
     pub fn new(board: u16) -> Board {
         let mut roles = Vec::with_capacity(11);
-        for role in 2u8..13 {
-            roles.push(Roll::new(role, board));
+
+        // Computes possible rolls with dual dice
+        for roll_value in 2u8..13 {
+            roles.push({
+                let mut boards = Vec::new();
+                // The amount of unique boards is all the alive pieces as the alive pieces are stored in binary.
+                // Counting up to the max value of a binary number with the same number of digits as alive pieces
+                // will iterate though every possible combination of the alive pieces, using the binary value of the
+                // counter.
+                let unique_board_amount = 2u16.pow(board.count_ones());
+                let numeric_board = Roll::pieces(board);
+
+                // Finds every valid move.
+                for unique_board in 1..unique_board_amount {
+                    // Checks if the simulated move would add up to the rolled value.
+                    // If it doesn't, then it's not a valid move.
+                    let possible_move = Roll::sum_move(unique_board, numeric_board.clone());
+                    if possible_move != roll_value {
+                        continue;
+                    }
+
+                    boards.push(Roll::preform_move(unique_board, numeric_board.clone()));
+                }
+
+                Roll {
+                    roll: roll_value.into(),
+                    boards: boards.into(),
+                }
+            });
         }
 
         Board {

@@ -11,7 +11,7 @@ use egui::ahash::HashMap;
 use egui::text::LayoutJob;
 use egui::{FontId, Id, Rect, RichText, TextFormat, Ui, Vec2, Window};
 
-use compute::board_roll::BoardRoll;
+use compute::BoardRoll;
 
 // The id's for the panels.
 const WINDOW_NAME: &'static str = "Shut The Box";
@@ -66,12 +66,19 @@ impl Default for Main {
 fn parse_moves() -> Option<HashMap<BoardRoll, u16>> {
     let file = match File::open("best_moves.yml") {
         Ok(file) => file,
-        Err(_) => {
+        Err(e) => {
+            eprintln!("{e}");
             return None;
         }
     };
     let reader = BufReader::new(file);
-    serde_yaml::from_reader(reader).ok()
+    match serde_yaml::from_reader(reader) {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("{e}");
+            None
+        }
+    }
 }
 
 impl Main {
@@ -150,7 +157,7 @@ impl eframe::App for Main {
 
                 let board_roll = BoardRoll::new(
                     self.root_board,
-                    clicked_on + 1, // Clicked-on is one less than the value it should be.
+                    (clicked_on + 1).into(), // Clicked-on is one less than the value it should be.
                 );
 
                 // If the value doesn't exist, then it's a dying move.
@@ -307,7 +314,7 @@ impl Main {
             // Generates the layout for the best moves for each roll.
             let mut board_layouts = Vec::with_capacity(12);
             for roll in 2..13 {
-                let board_roll = BoardRoll::new(self.root_board, roll);
+                let board_roll = BoardRoll::new(self.root_board, roll.into());
                 let best_move = *best_moves.get(&board_roll).unwrap_or(&0u16);
 
                 board_layouts.push(Self::generate_board(self.root_board, roll, best_move));

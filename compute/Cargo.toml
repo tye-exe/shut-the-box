@@ -9,3 +9,4 @@ serde = { version = "1.0.198", features = ["derive"] }
 serde_yaml = "0.9.34"
 once_cell = "1.19.0"
 fastrand = "2.1.0"
+derive_more = "0.99.18"

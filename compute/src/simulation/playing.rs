@@ -9,9 +9,9 @@ use std::thread;
 
 use fastrand::Rng;
 
-use crate::board_roll::BoardRoll;
 use crate::simulation::board::{get_board, get_rand_board, Board};
 use crate::simulation::playing::Result::{Draw, Loss, Win};
+use crate::{BoardRoll, DiceRoll};
 
 /// A wrapper struct to store the moves taken in a game & the result of the game.
 pub struct Games {
@@ -56,7 +56,7 @@ impl Weight {
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct Choice {
     root_board: u16,
-    roll: u8,
+    roll: DiceRoll,
     chosen_board: Option<u16>,
 }
 
@@ -183,9 +183,9 @@ pub fn compute_weights(threads: u8, games_to_play: u32, sender: Sender<bool>) {
     serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
 
     // Dumps the raw & win chances
-    let chances = File::create("move_chances.yml").expect("Should be able to create file.");
-    let writer = BufWriter::new(chances);
-    serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
+    // let chances = File::create("move_chances.yml").expect("Should be able to create file.");
+    // let writer = BufWriter::new(chances);
+    // serde_yaml::to_writer(writer, &choice_map).expect("Should be able to write data to file.");
 
     sender
         .send(true)
@@ -241,7 +241,7 @@ fn rand(
 
     let mut choice = Choice {
         root_board: board.get_raw(),
-        roll: rand_roll.roll_value,
+        roll: rand_roll.roll,
         chosen_board: None,
     };
 
