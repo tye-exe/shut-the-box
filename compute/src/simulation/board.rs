@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use fastrand::Rng;
 use rand::prelude::SliceRandom;
@@ -10,12 +10,11 @@ use crate::simulation::roll::Roll;
 // 0000000 | 000000000
 // 0000000 | 987654321
 
-
 /// Stores all the computed boards
-static BOARDS: OnceLock<Vec<Board>> = OnceLock::new();
+static BOARDS: OnceLock<Arc<[Board]>> = OnceLock::new();
 
 /// Gets the pre-computed boards.
-pub fn get_boards() -> &'static Vec<Board> {
+pub fn get_boards() -> &'static Arc<[Board]> {
     // Gets the pre-computed boards, or if they haven't been computed before, they are computed, cached, & returned.
     BOARDS.get_or_init(|| {
         let mut possible_boards = Vec::with_capacity(512);
@@ -26,7 +25,7 @@ pub fn get_boards() -> &'static Vec<Board> {
             possible_boards.push(Board::new(index));
         }
 
-        possible_boards
+        possible_boards.into()
     })
 }
 
@@ -38,9 +37,10 @@ pub fn get_board(binary_board: usize) -> Option<&'static Board> {
 
 /// Gets a random board.
 pub fn get_rand_board() -> &'static Board {
-    get_boards().choose(&mut thread_rng()).expect("The vec will never be empty.")
+    get_boards()
+        .choose(&mut thread_rng())
+        .expect("The vec will never be empty.")
 }
-
 
 /// Contains a current state of the board & the possible moves that could be made for each possible roll.
 #[derive(Debug)]
@@ -50,7 +50,10 @@ pub struct Board {
 }
 
 /// Contains each possible roll, which amount each value occurs being the weight of the value to be chosen.
-const POSSIBLE_ROLLS_INDEXES: [u8; 36] = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 10];
+const POSSIBLE_ROLLS_INDEXES: [u8; 36] = [
+    0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8,
+    8, 9, 9, 10,
+];
 
 impl Board {
     /// Simulates the possible rolls & their valid moves for the given board.
@@ -74,9 +77,14 @@ impl Board {
     /// The chance of a roll to be returned directly correlates to the chance it will be rolled.
     pub fn get_rand_roll(&self, rng: &mut Rng) -> &Roll {
         let index = rng.usize(..POSSIBLE_ROLLS_INDEXES.len());
-        let roll_index = POSSIBLE_ROLLS_INDEXES.get(index).expect("Will never be empty");
+        let roll_index = POSSIBLE_ROLLS_INDEXES
+            .get(index)
+            .expect("Will never be empty");
 
-        return self.rolls.get(*roll_index as usize).expect("A board always has 11 roles.");
+        return self
+            .rolls
+            .get(*roll_index as usize)
+            .expect("A board always has 11 roles.");
     }
 
     /// Sums up the numeric value of the alive pieces for this board.
