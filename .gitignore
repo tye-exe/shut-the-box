@@ -8,3 +8,6 @@
 # gui debug files
 best_moves.yml
 move_chances.yml
+
+# Flake cache
+.direnv/
